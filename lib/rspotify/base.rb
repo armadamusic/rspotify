@@ -87,10 +87,10 @@ module RSpotify
     #
     #           RSpotify::Base.search('Arctic', 'album,artist,playlist').total #=> 2142
     def self.search(query, types, limit: 20, offset: 0, market: nil)
-      query = CGI.escape query
+      q = build_query(query)
       types.gsub!(/\s+/, '')
 
-      url = "search?q=#{query}&type=#{types}"\
+      url = "search?q=#{q}&type=#{types}"\
             "&limit=#{limit}&offset=#{offset}"
 
       response = if market.is_a? Hash
@@ -111,6 +111,16 @@ module RSpotify
 
       insert_total(result, types, response)
       result
+    end
+
+    def self.build_query(query)
+      return CGI.escape(query) if query.is_a?(String)
+      return '' unless query.is_a?(Hash)
+      [].tap do |sections|
+        query.each do |key, value|
+          sections << "#{key}:#{CGI.escape(value)}"
+        end
+      end.join('%20')
     end
 
     def initialize(options = {})
