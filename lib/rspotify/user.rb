@@ -38,6 +38,8 @@ module RSpotify
       response = RestClient.post(TOKEN_URI, request_body, RSpotify.send(:auth_header))
       response = JSON.parse(response)
       @@users_credentials[user_id]['token'] = response['access_token']
+    rescue RestClient::BadRequest => e
+      raise e if e.response !~ /Refresh token revoked/
     end
     private_class_method :refresh_token
 
@@ -68,7 +70,9 @@ module RSpotify
 
     def initialize(options = {})
       credentials = options['credentials']
+      extra       = options['extra'].to_h
       options     = options['info'] if options['info']
+      options.merge!(extra['raw_info'].to_h)
 
       @birthdate    ||= options['birthdate']
       @country      ||= options['country']
@@ -109,6 +113,27 @@ module RSpotify
       response = User.oauth_post(@id, url, request_data)
       return response if RSpotify.raw_response
       Playlist.new response
+    end
+
+    def currently_playing
+      url = "me/player/currently-playing"
+      response = RSpotify.resolve_auth_request(@id, url)
+      return response if RSpotify.raw_response
+      Track.new response["item"]
+    end
+
+    def recently_played
+      url = "me/player/recently-played"
+      response = RSpotify.resolve_auth_request(@id, url)
+      return response if RSpotify.raw_response
+      
+      json = RSpotify.raw_response ? JSON.parse(response) : response
+      json['items'].map do |t| 
+        data = t['track']
+        data['played_at'] = t['played_at']
+        data['context_type'] = t['context']['type']
+        Track.new data
+      end
     end
 
     # Add the current user as a follower of one or more artists, other Spotify users or a playlist. Following artists or users require the *user-follow-modify*
@@ -168,7 +193,7 @@ module RSpotify
 
       response = User.oauth_get(@id, url)
       return response if RSpotify.raw_response
-      response["#{type}s"]['items'].map { |i| type_class.new i }
+      response["#{type}s"]['items'].compact.map { |i| type_class.new i }
     end
 
     # Check if the current user is following one or more artists or other Spotify users. This method
@@ -379,7 +404,7 @@ module RSpotify
     #           top_artists.first.name #=> "Nine Inch Nails"
     def top_artists(limit: 20, offset: 0, time_range: 'medium_term')
       url = "me/top/artists?limit=#{limit}&offset=#{offset}&time_range=#{time_range}"
-      response = User.oauth_get(@id, url) 
+      response = User.oauth_get(@id, url)
       return response if RSpotify.raw_response
       response['items'].map { |i| Artist.new i }
     end
@@ -397,7 +422,7 @@ module RSpotify
     #           top_tracks.first.name #=> "Ice to Never"
     def top_tracks(limit: 20, offset: 0, time_range: 'medium_term')
       url = "me/top/tracks?limit=#{limit}&offset=#{offset}&time_range=#{time_range}"
-      response = User.oauth_get(@id, url) 
+      response = User.oauth_get(@id, url)
       return response if RSpotify.raw_response
       response['items'].map { |i| Track.new i }
     end
